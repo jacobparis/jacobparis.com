@@ -6,7 +6,7 @@ import { Slot } from "@radix-ui/react-slot"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
-export const NavigableContext = createContext<
+const NavigableContext = createContext<
 	| {
 			href: string
 			shouldPrefetch: boolean
@@ -14,7 +14,7 @@ export const NavigableContext = createContext<
 	| undefined
 >(undefined)
 
-export function useNavigable() {
+function useNavigable() {
 	const context = use(NavigableContext)
 	if (context === undefined) {
 		throw new Error("useNavigable must be used within a Navigable component")

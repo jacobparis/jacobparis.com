@@ -5,4 +5,4 @@ export const Navigable = {
 	Link: NavigableLink,
 }
 
-export { useNavigable } from "./navigable-client"
+

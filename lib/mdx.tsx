@@ -1,6 +1,6 @@
 import matter from "gray-matter"
 import { Octokit } from "@octokit/rest"
-import { cacheTag } from "next/cache"
+import { cacheLife, cacheTag } from "next/cache"
 
 if (!process.env.GITHUB_REPO_OWNER) {
 	throw new Error("GITHUB_REPO_OWNER environment variable is required")
@@ -75,6 +75,7 @@ async function getFileContent(path: string): Promise<string> {
 export async function getFirstPostSlug(): Promise<string | null> {
 	"use cache"
 	cacheTag("posts-index")
+	cacheLife("max")
 
 	const files = await getContentFiles()
 	if (files.length === 0) {
@@ -87,6 +88,7 @@ export async function getFirstPostSlug(): Promise<string | null> {
 export async function getAllPosts(): Promise<PostMetadata[]> {
 	"use cache"
 	cacheTag("posts-index")
+	cacheLife("max")
 
 	const files = await getContentFiles()
 
@@ -118,6 +120,7 @@ export async function getAllPosts(): Promise<PostMetadata[]> {
 export async function getPostBySlug(slug: string): Promise<Post | null> {
 	"use cache"
 	cacheTag(`post-${slug}`)
+	cacheLife("max")
 
 	try {
 		const filePath = slugToFilename(slug)
@@ -136,13 +139,6 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 	} catch {
 		return null
 	}
-}
-
-export async function getAllSlugs(): Promise<string[]> {
-	"use cache"
-	cacheTag("posts-index")
-	const files = await getContentFiles()
-	return files.map((file) => filenameToSlug(file.name))
 }
 
 export async function getNextPost(currentSlug: string): Promise<PostMetadata | null> {

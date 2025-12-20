@@ -9,7 +9,7 @@ export function getLocalPath(relativePath: string): string {
 	return path.join(__dirname, "..", relativePath)
 }
 
-export function resolveGitDir(cwd: string): string | null {
+function resolveGitDir(cwd: string): string | null {
 	const p = path.join(cwd, ".git")
 	if (!fsSync.existsSync(p)) return null
 
