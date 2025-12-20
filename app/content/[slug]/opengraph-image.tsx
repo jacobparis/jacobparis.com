@@ -221,11 +221,11 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 						>
 							<div style={{ display: "flex" }}>
 								{/* eslint-disable-next-line @next/next/no-img-element */}
-								<img
+								{/* <img
 									style={{ width: "64px", borderRadius: "9999px" }}
 									src="https://jacobparis.com/images/jacob.png"
 									alt=""
-								/>
+								/> */}
 								<div
 									style={{
 										display: "flex",

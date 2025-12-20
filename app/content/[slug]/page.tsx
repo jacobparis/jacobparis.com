@@ -10,7 +10,6 @@ import { cacheTag, cacheLife } from "next/cache"
 // Generate a single static param is all we need
 export async function generateStaticParams() {
 	const slug = await getFirstPostSlug()
-	console.log("slug", slug)
 	if (!slug) return []
 
 	return [{ slug }]

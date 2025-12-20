@@ -48,7 +48,6 @@ async function getContentFiles(): Promise<Array<{ name: string; path: string }>>
 		ref: branch,
 	})
 
-	console.log("data", data)
 	if (!Array.isArray(data)) {
 		return []
 	}
