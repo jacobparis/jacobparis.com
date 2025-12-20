@@ -1,147 +1,115 @@
-import nodepath from "path"
-import fs from "fs-extra"
-import type { HttpHandler } from "msw"
-import { HttpResponse, http } from "msw"
+import { promises as fs } from "fs"
+import path from "node:path"
+import { http, type DefaultRequestMultipartBody, type HttpHandler, HttpResponse } from "msw"
+import {
+	getLocalPath,
+	GHContent,
+	GHContentsDescription,
+	hasMatchingGitHubRemote,
+	lstat,
+	notFoundResponse,
+	readFile,
+	toBase64,
+} from "./github-utils"
 
-async function isDirectory(d: string) {
-  try {
-    return (await fs.lstat(d)).isDirectory()
-  } catch {
-    return false
-  }
+function assertHasGitHubRemote(owner: string, repo: string) {
+	if (hasMatchingGitHubRemote(owner, repo)) return
+
+	const message = [
+		`Refused to mock github repo: ${owner}/${repo}`,
+		`If you want to return local files for this request, run "git remote add origin https://github.com/${owner}/${repo}.git"`,
+		"If you want to return the actual GitHub response, remove this guard in mocks/github.ts",
+	].join("\n")
+
+	console.error(message)
+	throw new Error(message)
 }
-async function isFile(d: string) {
-  try {
-    return (await fs.lstat(d)).isFile()
-  } catch {
-    return false
-  }
-}
 
-type GHContentsDescription = {
-  name: string
-  path: string
-  sha: string
-  type: "dir" | "file"
-}
-/** This is an MSW v1 file and we are upgrading it to v2 */
+const githubHandlers: Array<HttpHandler> = [
+	// Get the content of a file or directory
+	http.get<any, DefaultRequestMultipartBody>(
+		`https://api.github.com/repos/:owner/:repo/contents/:path*`,
+		async ({ params }) => {
+			console.log("get contents", params)
+			void assertHasGitHubRemote(params.owner, params.repo)
 
-export const GitHubMocks: Array<HttpHandler> = [
-  http.get(
-    "https://api.github.com/repos/:owner/:repo/contents/:path",
-    async (info) => {
-      const { repo, owner } = info.params
+			const remotePath = decodeURIComponent(params.path.join("/")).trim()
+			const localPath = getLocalPath(remotePath)
+			const { isDirectory, isFile, size } = await lstat(localPath)
 
-      if (typeof info.params.path !== "string") {
-        throw new Error("Path should be a string")
-      }
-      const path = decodeURIComponent(info.params.path).trim()
+			if (isFile) {
+				const content = await readFile(localPath)
+				const sha = Buffer.from(remotePath).toString("hex")
 
-      if (`${owner}/${repo}` !== process.env.GITHUB_REPOSITORY) {
-        throw new Error(
-          `Trying to fetch resource for unmockable resource: ${owner}/${repo}/${path}`,
-        )
-      }
+				return HttpResponse.json({
+					sha,
+					node_id: `${remotePath}_node_id`,
+					size,
+					url: `https://api.github.com/repos/${params.owner}/${params.repo}/git/blobs/${sha}`,
+					content: toBase64(content),
+					encoding: "base64",
+				} satisfies GHContent)
+			}
 
-      const localPath = nodepath.resolve(process.cwd(), path)
-      const isLocalDir = await isDirectory(localPath)
-      const isLocalFile = await isFile(localPath)
+			if (isDirectory) {
+				const dirList = await fs.readdir(localPath)
 
-      if (!isLocalDir && !isLocalFile) {
-        return HttpResponse.json([])
-      }
+				const contentDescriptions = await Promise.all(
+					dirList.map(async (name): Promise<GHContentsDescription> => {
+						const relativePath = path.join(remotePath, name)
+						const sha = Buffer.from(relativePath).toString("hex")
+						const fullPath = path.join(localPath, name)
+						const { isDirectory, size } = await lstat(fullPath)
+						return {
+							name,
+							path: relativePath,
+							sha,
+							size: isDirectory ? 0 : size,
+							url: `https://api.github.com/repos/${params.owner}/${params.repo}/contents/${relativePath}`,
+							html_url: `https://github.com/${params.owner}/${params.repo}/tree/main/${relativePath}`,
+							git_url: `https://api.github.com/repos/${params.owner}/${params.repo}/git/trees/${sha}`,
+							download_url: null,
+							type: isDirectory ? "dir" : "file",
+							_links: {
+								self: `https://api.github.com/repos/${params.owner}/${params.repo}/contents/${relativePath}`,
+								git: `https://api.github.com/repos/${params.owner}/${params.repo}/git/trees/${sha}`,
+								html: `https://github.com/${params.owner}/${params.repo}/tree/main/${relativePath}`,
+							},
+						}
+					}),
+				)
 
-      if (isLocalFile) {
-        const file = fs.readFileSync(localPath, { encoding: "utf-8" })
-        const encoding = "base64"
+				return HttpResponse.json(contentDescriptions)
+			}
 
-        return HttpResponse.json({
-          content: Buffer.from(file, "utf-8").toString(encoding),
-          encoding,
-        })
-      }
+			return notFoundResponse()
+		},
+	),
+	// Get the content of a blob
+	http.get<any, DefaultRequestMultipartBody>(
+		`https://api.github.com/repos/:owner/:repo/git/blobs/:sha`,
+		async ({ params }) => {
+			void assertHasGitHubRemote(params.owner, params.repo)
 
-      const dirList = await fs.readdir(localPath)
+			const sha = Buffer.from(params.sha, "hex").toString("utf8")
+			const relativePath = decodeURIComponent(sha).trim()
+			const fullPath = getLocalPath(relativePath)
+			const { isFile, size } = await lstat(fullPath)
 
-      const dirContent = await Promise.all(
-        dirList.map(async (name): Promise<GHContentsDescription> => {
-          const relativePath = nodepath.join(path, name)
-          const sha = relativePath
-          const fullPath = nodepath.resolve(process.cwd(), relativePath)
-          const isDir = await isDirectory(fullPath)
+			if (!isFile) return notFoundResponse()
 
-          return {
-            name,
-            path: relativePath,
-            sha,
-            type: isDir ? "dir" : "file",
-          }
-        }),
-      )
+			const content = await readFile(fullPath)
 
-      return HttpResponse.json(dirContent)
-    },
-  ),
-  http.get(
-    "https://api.github.com/repos/:owner/:repo/git/blobs/:sha",
-    async (info) => {
-      const { repo, owner } = info.params
-
-      if (typeof info.params.sha !== "string") {
-        throw new Error("sha should be a string")
-      }
-      const sha = decodeURIComponent(info.params.sha).trim()
-
-      if (`${owner}/${repo}` !== process.env.GITHUB_REPOSITORY) {
-        throw new Error(
-          `Trying to fetch resource for unmockable resource: ${owner}/${repo}`,
-        )
-      }
-
-      if (!sha.includes("/")) {
-        throw new Error(`No mockable data found for the given sha: ${sha}`)
-      }
-
-      const fullPath = nodepath.resolve(process.cwd(), sha)
-      const content = fs.readFileSync(fullPath, { encoding: "utf-8" })
-      const encoding = "base64"
-
-      return HttpResponse.json({
-        sha,
-        content: Buffer.from(content, "utf-8").toString(encoding),
-        encoding,
-      })
-    },
-  ),
-  http.get(
-    "https://api.github.com/repos/:owner/:repo/contents/:path*",
-    async (info) => {
-      const { owner, repo } = info.params
-
-      if (typeof info.params.path !== "string") {
-        throw new Error("Path should be a string")
-      }
-      const path = decodeURIComponent(info.params.path).trim()
-
-      if (
-        owner !== process.env.GH_OWNER ||
-        repo !== process.env.GH_REPO ||
-        !path.startsWith("content")
-      ) {
-        throw new Error(
-          `Trying to fetch resource for unmockable resource: ${owner}/${repo}/${path}`,
-        )
-      }
-
-      const fullPath = nodepath.resolve(process.cwd(), path)
-      const content = fs.readFileSync(fullPath, { encoding: "utf-8" })
-      const encoding = "base64"
-
-      return HttpResponse.json({
-        sha: path,
-        content: Buffer.from(content, "utf-8").toString(encoding),
-        encoding,
-      })
-    },
-  ),
+			return HttpResponse.json({
+				sha,
+				node_id: `${sha}_node_id`,
+				size,
+				url: `https://api.github.com/repos/${params.owner}/${params.repo}/git/blobs/${sha}`,
+				content: toBase64(content),
+				encoding: "base64",
+			} satisfies GHContent)
+		},
+	),
 ]
+
+export { githubHandlers }

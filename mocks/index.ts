@@ -1,7 +1,5 @@
 import { setupServer } from "msw/node"
-import { GitHubMocks } from "./github.ts"
+import { githubHandlers } from "./github"
 
-export const server = setupServer(...GitHubMocks)
-
-process.once("SIGINT", () => server.close())
-process.once("SIGTERM", () => server.close())
+/** @tutorial https://mswjs.io/ */
+export const server = setupServer(...githubHandlers)

@@ -1,7 +1,4 @@
 node_modules
-
-/build
-/public/build
-.env
-cache.db
-**.ignored**
+.vercel
+.env*
+.next

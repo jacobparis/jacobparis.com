@@ -1,0 +1,190 @@
+---
+title: Autosave form inputs with Remix
+description: Save forms automatically with useDebounceFetcher. Make a reusable Input component. Compatible with Conform.
+tags: Remix
+published: true
+timestamp: "2023-07-12"
+---
+
+<Callout type="warning">
+  This article was written for Remix 2, which has been merged into React Router 7. Some changes may be necessary.
+</Callout>
+
+
+In the past, it was common for users to explicitly press a save button regularly as they used an application, like Adobe Photoshop or Microsoft Word.
+
+If they forgot to save, or the program crashed, or they overwrote their save file, they would lose hours of work or more.
+
+But as the world moved toward cloud-based applications, autosave became the norm, and users have come to expect that if they make a change, it will be remembered.
+
+<div>
+  <iframe
+    className="mx-auto max-w-full"
+    width="560"
+    height="315"
+    src="https://www.youtube.com/embed/OeOOdYZ17eY"
+    title="YouTube video player"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen
+  />
+</div>
+
+In this guide, we'll show you how to use Remix's useFetcher hook to autosave form inputs on change or blur, and show a loading state while saving.
+
+## The useSubmit hook is canceled on navigation but useFetcher isn't
+
+The natural choice for submitting a form programmatically is the `useSubmit` hook, but it's not a good choice for auto-saving forms.
+
+Remix uses a global navigation state, so if you click a link to one page and then before it loads, you click a link to a different page, the request for the first page will be cancelled.
+
+Unfortunately, `useSubmit` also uses the same navigation state. If you use `useSubmit` to submit a form, and then navigate to a different page before it completes, the form submission will be cancelled.
+
+That might make sense for a form that you explicitly submit, but for an input that is expected to save automatically, you don't want the save to fail just because the user clicked a link too quickly.
+
+Every `useFetcher` hook gets its own state, so you can use it to make a request that will not be cancelled if the user navigates away.
+
+## Set up the form with a fetcher
+
+Instead of using the regular Remix `<Form />` component, use one returned by the fetcher at `fetcher.Form`.
+
+This example will use conform<SideNote> [Conform](https://conform.guide/) is a form validation library. but it's a great way to manage form state in Remix. </SideNote> to manage the form state, but you can use regular HTML attributes if you prefer.
+
+```tsx
+import { useFetcher } from "@remix-run/react"
+import { conform, useForm } from "@conform-to/react"
+
+export default function Example() {
+  const fetcher = useFetcher()
+
+  const [form, fields] = useForm<{
+    email: string
+    name: string
+  }>()
+
+  return (
+    <fetcher.Form method="POST" {...form.props}>
+      <input {...conform.input(fields.email)} />
+      <input {...conform.input(fields.name)} />
+
+      <button type="submit">
+        {fetcher.state === "submitting"
+          ? "Saving…"
+          : "Save"}
+      </button>
+    </fetcher.Form>
+  )
+}
+```
+
+## Add a debounced autosave
+
+We'll use an enhanced [useDebounceFetcher](/content/use-debounce-fetcher) hook that will automatically debounce its submissions for the individual inputs.
+
+If a user types quickly and tabs to each next input seamlessly, never pausing while filling out a large form, a lot of time can pass with their work unsaved. To avoid that, I like to make sure each input is autosaved individually.
+
+- If they pause for a moment while typing, the input will be saved.
+- If they tab to the next input, the previous input will be saved immediately, without waiting for the debounce delay to pass.
+
+Thanks to the useDebounceFetcher hook, we can do that with just a few lines of code.
+
+Create an emailFetcher and call it inside the onChange and onBlur handlers for the email input.
+
+```tsx
+import { useFetcher } from "@remix-run/react"
+import { conform, useForm } from "@conform-to/react"
+import { useDebounceFetcher } from "./use-debounce-fetcher"
+
+export default function Example() {
+  const fetcher = useFetcher()
+
+  const [form, fields] = useForm<{
+    email: string
+    name: string
+  }>()
+
+  const emailFetcher = useDebounceFetcher()
+
+  return (
+    <fetcher.Form method="POST" {...form.props}>
+      <input
+        {...conform.input(fields.email)}
+        onChange={(event) => {
+          emailFetcher.debounceSubmit(
+            event.currentTarget.form,
+            {
+              replace: true,
+              debounceTimeout: 500,
+            },
+          )
+        }}
+        onBlur={(event) => {
+          emailFetcher.debounceSubmit(
+            event.currentTarget.form,
+            {
+              replace: true,
+            },
+          )
+        }}
+      />
+
+      <input {...conform.input(fields.name)} />
+
+      <button type="submit">
+        {fetcher.state === "submitting"
+          ? "Saving…"
+          : "Save"}
+      </button>
+    </fetcher.Form>
+  )
+}
+```
+
+You'll also need to do the same thing for the name input, but now is a good time to think about how abstract this and avoid repetition.
+
+- prop level abstraction – make a function that takes a fetcher and returns an object `{ onChange(), onBlur() }` could work well. That would be similar to the `conform.input` function. You will still need to create a hook for each input though.
+- component level abstraction – make an Input component, then create the fetcher and event handlers inside the component.
+
+I like the component level abstraction because it keeps everything in one place and it also provides a place to add other features, or to put your tailwind classes.
+
+```tsx
+function DebouncedInput(
+  props: React.InputHTMLAttributes<HTMLInputElement>,
+) {
+  const fetcher = useDebounceFetcher()
+
+  return (
+    <input
+      className="block w-96 rounded border border-gray-300 px-4 py-3 focus:ring-1 focus:ring-indigo-600"
+      {...props}
+      onChange={(event) => {
+        fetcher.debounceSubmit(event.currentTarget.form, {
+          replace: true,
+          debounceTimeout: 500,
+        })
+
+        // optional: call the onChange prop if it exists
+        props.onChange?.(event)
+      }}
+      onBlur={(event) => {
+        fetcher.debounceSubmit(event.currentTarget.form, {
+          replace: true,
+        })
+
+        props.onBlur?.(event)
+      }}
+    />
+  )
+}
+```
+
+Now you can use the DebouncedInput component instead of the regular input and it will automatically save on change and blur.
+
+```tsx
+return (
+  <fetcher.Form method="POST" {...form.props}>
+    <DebouncedInput {...conform.input(fields.email)} />
+    <DebouncedInput {...conform.input(fields.name)} />
+  </fetcher.Form>
+)
+```

@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "node vercel-ignore-build.js"
+}
