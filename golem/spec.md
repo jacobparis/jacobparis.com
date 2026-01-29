@@ -1,3 +1,8 @@
+# Add Hello World Page
+
+## Overview
+Add a simple "Hello World" page to this Next.js application.
+
 ## Tasks
 
-- [ ] Add hello world
+- [ ] Create a hello-world page at `/hello-world` route that displays "Hello, World!"
