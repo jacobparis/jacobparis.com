@@ -1,5 +1,8 @@
+# Add a Hello Page
+
+## Overview
+Add a simple "/hello" page to the Next.js application.
+
 ## Tasks
 
-- [ ] Add a hello world function to src/index.ts
-- [ ] Add a test for the hello world function
-
+- [ ] Create a hello page at `app/hello/page.tsx` that displays "Hello, World!"
