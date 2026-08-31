@@ -22,12 +22,12 @@ export default function HomePage() {
 				</a>
 			</p>
 			<nav className="mt-8 flex items-center gap-6 text-sm">
-				<a
-					href="https://docs-content-test.jacobparis.com/docs/probe"
+				<Link
+					href="/retrieval-test/bdb1ad8d5a2dc8ec7bdf9bef"
 					className="text-muted-foreground hover:text-foreground transition-colors"
 				>
-					Docs test
-				</a>
+					Retrieval test
+				</Link>
 				<Link
 					href="/content"
 					className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
